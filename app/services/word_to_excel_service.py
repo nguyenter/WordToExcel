@@ -41,6 +41,27 @@ def _extract_hotline_numbers(text: str) -> str:
     return ", ".join(result)
 
 
+def _extract_value_after_label(lines: list[str], label_regex: str) -> str:
+    """
+    Find first line matching label_regex and return the text after the label.
+    Supports separators like ":" or tab or spaces.
+    """
+    if not lines:
+        return ""
+
+    label_re = re.compile(label_regex, flags=re.IGNORECASE)
+    for line in lines:
+        if not line:
+            continue
+        m = label_re.match(line.strip())
+        if not m:
+            continue
+        # Remaining text after the label (and separators) is captured in group(1)
+        value = (m.group(1) or "").strip()
+        return value
+    return ""
+
+
 def _looks_like_address_line(line: str) -> bool:
     if not line:
         return False
@@ -77,21 +98,35 @@ def _parse_company_block_lines(lines: list[str]) -> dict | None:
     # Old format: starts with "CÔNG TY ..."
     if first_line.upper().startswith("CÔNG TY"):
         company_name = first_line
-        representative = ""
-        phone = ""
-        address = ""
+        # Accept both old "label:" style and the new tab/space-separated style:
+        # "Địa chỉ\tSố 43/9 ...", "Điện thoại 0918...", "Người đại diện\tNgô ..."
+        representative = _extract_value_after_label(
+            lines,
+            r"^người\s+đại\s+diện\s*[:\t ]+\s*(.+)$",
+        )
+        if not representative:
+            representative = _extract_value_after_label(
+                lines,
+                r"^đại\s+diện(?:\s+pháp\s+luật)?\s*[:\t ]+\s*(.+)$",
+            )
 
-        rep_match = re.search(r"Đại diện(?: pháp luật)?:\s*([^Đ]+)", joined)
-        if rep_match:
-            representative = rep_match.group(1).strip()
+        address = _extract_value_after_label(
+            lines,
+            r"^địa\s+chỉ(?:\s+thuế)?\s*[:\t ]+\s*(.+)$",
+        )
 
-        phone_match = re.search(r"Điện thoại:\s*([\d\s\.\-]+)", joined)
-        if phone_match:
-            phone = _extract_hotline_numbers(phone_match.group(0)) or _normalize_phone_number(phone_match.group(1))
-
-        addr_match = re.search(r"Địa chỉ(?: thuế)?:\s*(.+?)(?=Điện thoại:|Đại diện|Email:|$)", joined)
-        if addr_match:
-            address = addr_match.group(1).strip()
+        phone_raw = _extract_value_after_label(
+            lines,
+            r"^điện\s+thoại\s*[:\t ]+\s*(.+)$",
+        )
+        if phone_raw:
+            phone = _extract_hotline_numbers(phone_raw) or _normalize_phone_number(phone_raw)
+        else:
+            phone = ""
+        # Force Excel to treat plain digit phone numbers as text
+        # to preserve leading zero (e.g. 0918...).
+        if phone and re.fullmatch(r"\d+", phone) and phone.startswith("0"):
+            phone = "'" + phone
 
         return {
             "Khách hàng": company_name,
