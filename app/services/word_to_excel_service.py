@@ -1,4 +1,6 @@
 from io import BytesIO
+from pathlib import Path
+import re
 
 import pandas as pd
 from docx import Document
@@ -6,36 +8,45 @@ from docx import Document
 
 def extract_multiple_companies_from_docx(file_stream):
     doc = Document(file_stream)
-
+    full_text = "\n".join([p.text.strip() for p in doc.paragraphs if p.text.strip()])
+    blocks = re.split(r"(?=CÔNG TY)", full_text)
     all_data = []
-    current = None
 
-    for para in doc.paragraphs:
-        text = para.text.strip()
-
-        if not text:
+    for block in blocks:
+        block = block.strip()
+        if not block.startswith("CÔNG TY"):
             continue
 
-        if text.startswith("CÔNG TY"):
-            if current:
-                all_data.append(current)
+        lines = block.split("\n")
+        company_name = lines[0].strip()
+        clean_text = " ".join(lines)
 
-            current = {
-                "Khách hàng": text,
-                "Tên liên hệ": "",
-                "Điện thoại": "",
-                "Địa chỉ": "",
+        representative = ""
+        phone = ""
+        address = ""
+
+        # Support "Đại diện:" and "Đại diện pháp luật:"
+        rep_match = re.search(r"Đại diện(?: pháp luật)?:\s*([^Đ]+)", clean_text)
+        if rep_match:
+            representative = rep_match.group(1).strip()
+
+        phone_match = re.search(r"Điện thoại:\s*([\d]+)", clean_text)
+        if phone_match:
+            phone = phone_match.group(1).strip()
+
+        # Support "Địa chỉ:" and "Địa chỉ thuế:"
+        addr_match = re.search(r"Địa chỉ(?: thuế)?:\s*(.+?)(?=Điện thoại:|Đại diện|$)", clean_text)
+        if addr_match:
+            address = addr_match.group(1).strip()
+
+        all_data.append(
+            {
+                "Khách hàng": company_name,
+                "Tên liên hệ": representative,
+                "Điện thoại": phone,
+                "Địa chỉ": address,
             }
-        elif current:
-            if "Đại diện:" in text:
-                current["Tên liên hệ"] = text.replace("Đại diện:", "").strip()
-            elif "Điện thoại:" in text:
-                current["Điện thoại"] = text.replace("Điện thoại:", "").strip()
-            elif "Địa chỉ:" in text:
-                current["Địa chỉ"] = text.replace("Địa chỉ:", "").strip()
-
-    if current:
-        all_data.append(current)
+        )
 
     return all_data
 
@@ -58,3 +69,19 @@ def convert_docx_to_excel_bytes(file_stream):
     output.seek(0)
 
     return output
+
+
+def convert_docx_path_to_excel_path(docx_path, output_path=None):
+    docx_path = Path(docx_path)
+    if output_path is None:
+        output_path = docx_path.with_suffix(".xlsx")
+    else:
+        output_path = Path(output_path)
+
+    with docx_path.open("rb") as src:
+        excel_bytes = convert_docx_to_excel_bytes(src)
+
+    with output_path.open("wb") as dst:
+        dst.write(excel_bytes.getvalue())
+
+    return str(output_path)
