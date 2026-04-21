@@ -1,0 +1,47 @@
+{% extends 'layout/base.html' %}
+
+{% block content %}
+<section class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h2 class="mb-3">Chuyen Word sang Excel</h2>
+                    <p class="text-muted mb-4">
+                        Tai len file <code>.docx</code>, he thong se xuat file <code>.xlsx</code>
+                        cung ten file goc.
+                    </p>
+
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                    <div class="mb-3">
+                        {% for category, message in messages %}
+                        <div class="alert alert-{{ category }}" role="alert">{{ message }}</div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    {% endwith %}
+
+                    <form method="post" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label for="word_file" class="form-label fw-semibold">Chon file Word (.docx)</label>
+                            <input
+                                id="word_file"
+                                name="word_file"
+                                type="file"
+                                class="form-control"
+                                accept=".docx"
+                                required
+                            />
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">
+                            Tai len va xuat Excel
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+{% endblock %}
