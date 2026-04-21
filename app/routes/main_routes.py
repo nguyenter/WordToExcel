@@ -4,15 +4,13 @@ from io import BytesIO
 from flask import Blueprint, flash, redirect, render_template, request, send_file, url_for
 from werkzeug.utils import secure_filename
 
-from app.models import Book
 from app.services.word_to_excel_service import convert_docx_to_excel_bytes
 
 main_bp = Blueprint('main', __name__)
 
 @main_bp.route('/')
 def index():
-    featured_books = Book.query.limit(8).all()
-    return render_template('index.html', featured_books=featured_books)
+    return redirect(url_for('main.word_to_excel'))
 
 
 @main_bp.route('/word-to-excel', methods=['GET', 'POST'])
