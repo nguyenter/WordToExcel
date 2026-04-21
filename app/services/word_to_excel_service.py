@@ -4,6 +4,7 @@ import re
 
 import pandas as pd
 from docx import Document
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 
 def _normalize_phone_number(raw: str) -> str:
@@ -210,6 +211,23 @@ def convert_docx_to_excel_bytes(file_stream):
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False)
+
+        # Style header row similar to Excel's bold + gray fill.
+        ws = writer.book.active
+        header_fill = PatternFill(fill_type="solid", fgColor="D9D9D9")
+        header_font = Font(bold=True)
+        header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        thin = Side(style="thin", color="A6A6A6")
+        header_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+            cell.border = header_border
+
+        # Freeze header row for easier scrolling.
+        ws.freeze_panes = "A2"
     output.seek(0)
 
     return output
