@@ -214,7 +214,7 @@ def convert_docx_to_excel_bytes(file_stream):
 
         # Style header row similar to Excel's bold + gray fill.
         ws = writer.book.active
-        header_fill = PatternFill(fill_type="solid", fgColor="D9D9D9")
+        header_fill = PatternFill(fill_type="solid", fgColor="D9E1F2")
         header_font = Font(bold=True)
         header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         thin = Side(style="thin", color="A6A6A6")
