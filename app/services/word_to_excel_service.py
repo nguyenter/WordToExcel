@@ -124,10 +124,6 @@ def _parse_company_block_lines(lines: list[str]) -> dict | None:
             phone = _extract_hotline_numbers(phone_raw) or _normalize_phone_number(phone_raw)
         else:
             phone = ""
-        # Force Excel to treat plain digit phone numbers as text
-        # to preserve leading zero (e.g. 0918...).
-        if phone and re.fullmatch(r"\d+", phone) and phone.startswith("0"):
-            phone = "'" + phone
 
         return {
             "Khách hàng": company_name,
@@ -225,6 +221,24 @@ def convert_docx_to_excel_bytes(file_stream):
             cell.font = header_font
             cell.alignment = header_alignment
             cell.border = header_border
+
+        # Ensure phone numbers stay as text across importers (preserve leading zero).
+        try:
+            phone_col_idx = next(
+                (cell.column for cell in ws[1] if (cell.value or "").strip() == "Điện thoại"),
+                None,
+            )
+            if phone_col_idx is not None:
+                for row in range(2, ws.max_row + 1):
+                    c = ws.cell(row=row, column=phone_col_idx)
+                    if c.value is None:
+                        continue
+                    # Coerce to string and force text format.
+                    c.value = str(c.value).strip()
+                    c.number_format = "@"
+        except Exception:
+            # If anything goes wrong, don't break export.
+            pass
 
         # Freeze header row for easier scrolling.
         ws.freeze_panes = "A2"
