@@ -16,17 +16,17 @@ def index():
 @main_bp.route('/word-to-excel', methods=['GET', 'POST'])
 def word_to_excel():
     if request.method == 'GET':
-        return render_template('word_to_excel.html', hide_header=True)
+        return render_template('word_to_excel.html')
 
     upload = request.files.get('word_file')
     if upload is None or upload.filename == '':
-        flash('Vui long chon file Word de tai len.', 'danger')
+        flash('Vui lòng chọn file Word để tải lên.', 'danger')
         return redirect(url_for('main.word_to_excel'))
 
     filename = secure_filename(upload.filename)
     suffix = Path(filename).suffix.lower()
     if suffix != '.docx':
-        flash('Chi ho tro file .docx.', 'danger')
+        flash('Chỉ hỗ trợ file .docx.', 'danger')
         return redirect(url_for('main.word_to_excel'))
 
     file_bytes = BytesIO(upload.read())

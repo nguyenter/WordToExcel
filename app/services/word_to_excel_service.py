@@ -6,10 +6,34 @@ import pandas as pd
 from docx import Document
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
+VALID_MOBILE_PREFIXES = {
+    "086",
+    "096", "097", "098",
+    "032", "033", "034", "035", "036", "037", "038", "039",
+    "088",
+    "091", "094",
+    "081", "082", "083", "084", "085",
+    "089",
+    "090", "093",
+    "070", "076", "077", "078", "079",
+    "092",
+    "056", "058",
+    "059",
+    "099",
+}
+
+
+def _is_valid_mobile_number(number: str) -> bool:
+    if not number or len(number) != 10:
+        return False
+    if not number.isdigit():
+        return False
+    return number[:3] in VALID_MOBILE_PREFIXES
+
 
 def _normalize_phone_number(raw: str) -> str:
     digits = re.sub(r"\D+", "", raw or "")
-    if digits.startswith("02"):
+    if not _is_valid_mobile_number(digits):
         return ""
     return digits
 
@@ -73,10 +97,26 @@ def _looks_like_address_line(line: str) -> bool:
 
     # Common Vietnamese address tokens (also include ascii variants)
     tokens = (
-        r"\b(đường|duong|phố|pho|số|so|ngõ|ngo|hẻm|hem|hẻm|hxh|"
-        r"phường|phuong|p\.|quận|quan|q\.|huyện|huyen|xã|xa|"
-        r"tỉnh|tinh|thành\s*phố|thanh\s*pho|tp\.|t\.p\.|"
-        r"tòa|toa|tầng|tang|lầu|lau|khu|ấp|ap|thôn|thon|xóm|xom)\b"
+        r"\b("
+        r"đường|duong|phố|pho|đại\s*lộ|dai\s*lo|"
+        r"số|so|"
+        r"hẻm|hem|ngõ|ngo|ngách|ngach|hxh|kiệt|kiet|"
+        r"phường|phuong|p\.?\s*\d*|"
+        r"quận|quan|q\.?\s*\d*|"
+        r"huyện|huyen|"
+        r"xã|xa|"
+        r"thị\s*trấn|thi\s*tran|"
+        r"thị\s*xã|thi\s*xa|"
+        r"tỉnh|tinh|"
+        r"thành\s*phố|thanh\s*pho|tp\.?|t\.p\.?"
+        r"|tp\s*hcm|tphcm"
+        r"|"
+        r"tòa|toa|tầng|tang|lầu|lau|block|"
+        r"chung\s*cư|cc|"
+        r"khu|kdc|kdt|kcn|"
+        r"ấp|ap|thôn|thon|xóm|xom|"
+        r"building|tower"
+        r")\b"
     )
     if re.search(tokens, s, flags=re.IGNORECASE):
         return True

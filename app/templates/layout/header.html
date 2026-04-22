@@ -1,10 +1,33 @@
 <header class="shadow-sm">
     <div class="container-fluid px-4 d-flex align-items-center justify-content-between py-2">
         <div class="d-flex align-items-center header-logo flex-shrink-0">
-            <a href="{{ url_for('main.word_to_excel') }}" class="text-white fs-3 me-3">
-                <i class="fa-solid fa-file-arrow-up"></i>
+            <a href="{{ url_for('main.word_to_excel') }}" class="text-white fs-3 me-3 header-brand-link">
+                <img
+                    src="{{ url_for('static', filename='images/chuyendoi.png') }}"
+                    alt="Logo chuyển đổi"
+                    class="brand-image"
+                >
             </a>
-            <span class="fw-bold fs-4 text-white">Word To Excel</span>
+            <span class="fw-bold fs-4 text-white">Chuyển đổi Word sang Excel</span>
+        </div>
+        <div class="d-flex align-items-center gap-2 header-actions">
+            <a href="{{ url_for('main.word_to_excel') }}" class="btn btn-sm fw-semibold header-action-btn">
+                Tải file lên
+            </a>
+            <button
+                type="button"
+                class="btn btn-sm fw-semibold header-action-btn"
+                onclick="alert('Tính năng đang phát triển')"
+            >
+                Lấy dữ liệu Web
+            </button>
+            <button
+                type="button"
+                class="btn btn-sm fw-semibold header-action-btn"
+                onclick="alert('Tính năng đang phát triển')"
+            >
+                Lấy dữ liệu Maps
+            </button>
         </div>
     </div>
 </header>

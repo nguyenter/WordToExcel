@@ -6,10 +6,10 @@
         <div class="col-lg-8">
             <div class="card shadow-sm">
                 <div class="card-body p-4">
-                    <h2 class="mb-3">Chuyen doi data to excel</h2>
+                    <h2 class="mb-3">Chuyển đổi dữ liệu sang Excel</h2>
                     <p class="text-muted mb-4">
-                        Tai len file <code>.docx</code>, he thong se xuat file <code>.xlsx</code>
-                        cung ten file goc.
+                        Tải lên file <code>.docx</code>, hệ thống sẽ xuất file <code>.xlsx</code>
+                        cùng tên file gốc.
                     </p>
 
                     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -24,7 +24,7 @@
 
                     <form method="post" enctype="multipart/form-data">
                         <div class="mb-3">
-                            <label for="word_file" class="form-label fw-semibold">Chon file Word (.docx)</label>
+                            <label for="word_file" class="form-label fw-semibold">Chọn file Word (.docx)</label>
                             <input
                                 id="word_file"
                                 name="word_file"
@@ -36,10 +36,27 @@
                         </div>
 
                         <button type="submit" class="btn btn-primary">
-                            Tai len va xuat Excel
+                            Tải lên và xuất Excel
                         </button>
                     </form>
                 </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="container pb-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="alert alert-warning mb-0" role="note">
+                <strong>Ghi chú:</strong>
+                Hiện tại chỉ chuyển đổi được các nguồn từ các trang như:
+                <a href="https://hoptackinhdoanh.com/" target="_blank" rel="noopener noreferrer">https://hoptackinhdoanh.com/</a>,
+                <a href="https://hsctvn.com/" target="_blank" rel="noopener noreferrer">https://hsctvn.com/</a>,
+                <a href="https://doanhnghiep.biz/" target="_blank" rel="noopener noreferrer">https://doanhnghiep.biz/</a>.
+                Khi xuất file Excel ra, phải vào file kiểm tra và bật <strong>Enable Editing</strong> rồi lưu lại
+                mới có thể Upload file lên
+                <a href="https://cv.nasani.vn/" target="_blank" rel="noopener noreferrer">https://cv.nasani.vn/</a>.
             </div>
         </div>
     </div>
