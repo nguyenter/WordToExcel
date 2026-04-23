@@ -1,13 +1,68 @@
 {% extends 'layout/base.html' %}
 
 {% block content %}
+<div id="pricing-announcement-overlay" class="pricing-announcement-overlay" role="dialog" aria-modal="true" aria-labelledby="pricing-announcement-title">
+    <div class="pricing-announcement-card">
+        <button
+            id="pricing-announcement-close"
+            type="button"
+            class="pricing-announcement-close"
+            aria-label="Đóng thông báo"
+        >
+            &times;
+        </button>
+        <h3 id="pricing-announcement-title" class="h5 mb-3">Thông báo quan trọng</h3>
+        <p class="mb-2">Website chuyển đổi file data Word sang Excel cho Nasani sẽ bắt đầu tính phí từ <strong>00:00 27/04/2026</strong>.</p>
+    </div>
+</div>
+
+<style>
+.pricing-announcement-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.pricing-announcement-card {
+    position: relative;
+    width: min(580px, 100%);
+    padding: 1.85rem;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.no-copy-block {
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.pricing-announcement-close {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.75rem;
+    border: none;
+    background: transparent;
+    font-size: 1.75rem;
+    line-height: 1;
+    cursor: pointer;
+}
+</style>
+
 <section class="container py-4">
     <div class="row justify-content-center">
         <div class="col-lg-8">
             <div class="card shadow-sm">
                 <div class="card-body p-4">
-                    <h2 class="mb-3">Chuyển đổi dữ liệu sang Excel</h2>
-                    <p class="text-muted mb-4">
+                    <h2 class="mb-3 no-copy-block">Chuyển đổi dữ liệu sang Excel</h2>
+                    <p class="text-muted mb-4 no-copy-block">
                         Tải lên file <code>.docx</code>, hệ thống sẽ xuất file <code>.xlsx</code>
                         cùng tên file gốc.
                     </p>
@@ -24,7 +79,7 @@
 
                     <form method="post" enctype="multipart/form-data">
                         <div class="mb-3">
-                            <label for="word_file" class="form-label fw-semibold">Chọn file Word (.docx)</label>
+                            <label for="word_file" class="form-label fw-semibold no-copy-block">Chọn file Word (.docx)</label>
                             <input
                                 id="word_file"
                                 name="word_file"
@@ -65,4 +120,39 @@
         </div>
     </div>
 </section>
+
+<script>
+(() => {
+    const overlay = document.getElementById("pricing-announcement-overlay");
+    const closeButton = document.getElementById("pricing-announcement-close");
+
+    if (!overlay || !closeButton) {
+        return;
+    }
+
+    document.body.style.overflow = "hidden";
+
+    const announcementCard = overlay.querySelector(".pricing-announcement-card");
+    if (announcementCard) {
+        ["copy", "cut", "contextmenu", "selectstart", "dragstart"].forEach((eventName) => {
+            announcementCard.addEventListener(eventName, (event) => {
+                event.preventDefault();
+            });
+        });
+    }
+
+    document.querySelectorAll(".no-copy-block").forEach((node) => {
+        ["copy", "cut", "contextmenu", "selectstart", "dragstart"].forEach((eventName) => {
+            node.addEventListener(eventName, (event) => {
+                event.preventDefault();
+            });
+        });
+    });
+
+    closeButton.addEventListener("click", () => {
+        overlay.remove();
+        document.body.style.overflow = "";
+    });
+})();
+</script>
 {% endblock %}
