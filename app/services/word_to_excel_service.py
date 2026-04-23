@@ -22,6 +22,8 @@ VALID_MOBILE_PREFIXES = {
     "099",
 }
 
+LABEL_SEPARATOR_PATTERN = r"\s*(?:[:：]\s*|\s+)"
+
 
 def _is_valid_mobile_number(number: str) -> bool:
     if not number or len(number) != 10:
@@ -151,22 +153,27 @@ def _parse_company_block_lines(lines: list[str]) -> dict | None:
         # "Địa chỉ\tSố 43/9 ...", "Điện thoại 0918...", "Người đại diện\tNgô ..."
         representative = _extract_value_after_label(
             lines,
-            r"^người\s+đại\s+diện\s*[:\t ]+\s*(.+)$",
+            rf"^người\s+đại\s+diện{LABEL_SEPARATOR_PATTERN}(.+)$",
         )
         if not representative:
             representative = _extract_value_after_label(
                 lines,
-                r"^đại\s+diện(?:\s+pháp\s+luật)?\s*[:\t ]+\s*(.+)$",
+                rf"^người\s+đại\s+diện\s+pháp\s+luật{LABEL_SEPARATOR_PATTERN}(.+)$",
+            )
+        if not representative:
+            representative = _extract_value_after_label(
+                lines,
+                rf"^đại\s+diện(?:\s+pháp\s+luật)?{LABEL_SEPARATOR_PATTERN}(.+)$",
             )
 
         address = _extract_value_after_label(
             lines,
-            r"^địa\s+chỉ(?:\s+thuế)?\s*[:\t ]+\s*(.+)$",
+            rf"^địa\s+chỉ(?:\s+thuế)?{LABEL_SEPARATOR_PATTERN}(.+)$",
         )
 
         phone_raw = _extract_value_after_label(
             lines,
-            r"^điện\s+thoại\s*[:\t ]+\s*(.+)$",
+            rf"^điện\s+thoại{LABEL_SEPARATOR_PATTERN}(.+)$",
         )
         if phone_raw:
             phone = _extract_hotline_numbers(phone_raw) or _normalize_phone_number(phone_raw)
@@ -189,6 +196,20 @@ def _parse_company_block_lines(lines: list[str]) -> dict | None:
     # 4) "Hotline: ..."
     # 5) email line
     company_name = first_line
+    representative = _extract_value_after_label(
+        lines,
+        rf"^người\s+đại\s+diện{LABEL_SEPARATOR_PATTERN}(.+)$",
+    )
+    if not representative:
+        representative = _extract_value_after_label(
+            lines,
+            rf"^người\s+đại\s+diện\s+pháp\s+luật{LABEL_SEPARATOR_PATTERN}(.+)$",
+        )
+    if not representative:
+        representative = _extract_value_after_label(
+            lines,
+            rf"^đại\s+diện(?:\s+pháp\s+luật)?{LABEL_SEPARATOR_PATTERN}(.+)$",
+        )
 
     hotline_line = next((l for l in lines if re.search(r"\bhotline\b", l, flags=re.IGNORECASE)), "")
     phone = _extract_hotline_numbers(hotline_line)
@@ -209,7 +230,7 @@ def _parse_company_block_lines(lines: list[str]) -> dict | None:
 
     return {
         "Khách hàng": company_name,
-        "Tên liên hệ": "",
+        "Tên liên hệ": representative,
         "Điện thoại": phone,
         "Địa chỉ": address,
     }

@@ -7,6 +7,7 @@ from werkzeug.utils import secure_filename
 from app.services.word_to_excel_service import convert_docx_to_excel_bytes
 
 main_bp = Blueprint('main', __name__)
+SAMPLE_WORD_PATH = Path(__file__).resolve().parents[2] / "data mẫu.pdf"
 
 @main_bp.route('/')
 def index():
@@ -38,4 +39,18 @@ def word_to_excel():
         as_attachment=True,
         download_name=excel_name,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+
+
+@main_bp.route('/sample-word')
+def sample_word():
+    if not SAMPLE_WORD_PATH.exists():
+        flash('Không tìm thấy file mẫu Word (PDF).', 'danger')
+        return redirect(url_for('main.word_to_excel'))
+
+    return send_file(
+        SAMPLE_WORD_PATH,
+        as_attachment=False,
+        download_name='data-mau.pdf',
+        mimetype='application/pdf',
     )
