@@ -38,17 +38,13 @@ def _normalize_phone_number(raw: str) -> str:
     return digits
 
 
-def _extract_hotline_numbers(text: str) -> str:
-    """
-    Extract hotline numbers from a line like:
-    "Hotline: 0913 615 785, 098 383 7474"
-    Apply constraint: if number starts with 02x... => drop it.
-    """
+def _extract_valid_phone_numbers(text: str) -> list[str]:
     if not text:
-        return ""
+        return []
 
-    # Keep sequences that look like Vietnamese phone numbers starting with 0
-    candidates = re.findall(r"(?:\b0[\d\s\.\-]{8,}\b)", text)
+    # Capture phone-like fragments even when there is no explicit label
+    # (e.g. "0918004372", "0918 004 372", "0918-004-372", "(0918)004372").
+    candidates = re.findall(r"(?:0[\d\.\-\s\(\)]{8,})", text)
     normalized = []
     for c in candidates:
         n = _normalize_phone_number(c)
@@ -62,7 +58,19 @@ def _extract_hotline_numbers(text: str) -> str:
         if n not in seen:
             seen.add(n)
             result.append(n)
+    return result
 
+
+def _extract_hotline_numbers(text: str) -> str:
+    """
+    Extract hotline numbers from a line like:
+    "Hotline: 0913 615 785, 098 383 7474"
+    Apply constraint: if number starts with 02x... => drop it.
+    """
+    if not text:
+        return ""
+
+    result = _extract_valid_phone_numbers(text)
     return ", ".join(result)
 
 
@@ -164,6 +172,8 @@ def _parse_company_block_lines(lines: list[str]) -> dict | None:
             phone = _extract_hotline_numbers(phone_raw) or _normalize_phone_number(phone_raw)
         else:
             phone = ""
+        if not phone:
+            phone = ", ".join(_extract_valid_phone_numbers(joined))
 
         return {
             "Khách hàng": company_name,
@@ -182,6 +192,8 @@ def _parse_company_block_lines(lines: list[str]) -> dict | None:
 
     hotline_line = next((l for l in lines if re.search(r"\bhotline\b", l, flags=re.IGNORECASE)), "")
     phone = _extract_hotline_numbers(hotline_line)
+    if not phone:
+        phone = ", ".join(_extract_valid_phone_numbers(joined))
 
     # Address: collect lines after the first line, excluding "Ngày cập nhật...", hotline, and email-only lines
     address_parts: list[str] = []
