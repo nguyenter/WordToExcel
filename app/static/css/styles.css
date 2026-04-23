@@ -152,12 +152,28 @@ main {
 }
 
 @media (max-width: 768px) {
+    header .container-fluid {
+        flex-wrap: wrap;
+        justify-content: center !important;
+        gap: 8px;
+    }
+
     .header-logo span {
         font-size: 1.1rem !important;
+        text-align: center;
     }
 
     .header-actions {
-        display: none !important;
+        display: flex !important;
+        width: 100%;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 8px !important;
+    }
+
+    .header-action-btn {
+        font-size: 0.85rem;
+        padding: 0.3rem 0.55rem;
     }
 
     .brand-image {
