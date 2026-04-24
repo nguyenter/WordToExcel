@@ -17,10 +17,6 @@ DOCX_REQUIRED_ENTRIES = (
 DOCX_BLOCKED_ENTRIES = (
     "word/vbaProject.bin",
     "word/vbaData.xml",
-    "word/activeX/",
-    "word/embeddings/",
-    "word/externalLinks/",
-    "customXml/",
 )
 
 
@@ -51,6 +47,17 @@ def _validate_docx_content(file_bytes: BytesIO) -> str | None:
                     for name in lower_names
                 ):
                     return "File chứa thành phần macro/payload không được phép."
+
+            try:
+                content_types_xml = archive.read("[Content_Types].xml").decode(
+                    "utf-8",
+                    errors="ignore",
+                ).lower()
+            except KeyError:
+                return "File .docx không hợp lệ hoặc bị thiếu cấu trúc bắt buộc."
+
+            if "macroenabled" in content_types_xml:
+                return "File chứa thành phần macro/payload không được phép."
 
             # Basic anti-zip-bomb guard.
             total_uncompressed = sum(info.file_size for info in archive.infolist())
