@@ -89,6 +89,49 @@ def _extract_value_after_label(lines: list[str], label_regex: str) -> str:
     return ""
 
 
+def _extract_value_after_label_or_following_lines(
+    lines: list[str],
+    label_regex: str,
+    stop_regexes: list[str] | None = None,
+) -> str:
+    """
+    Extract value for a label that may be:
+    - on the same line as the label, or
+    - on one/many following lines.
+    """
+    if not lines:
+        return ""
+
+    label_re = re.compile(label_regex, flags=re.IGNORECASE)
+    stop_res = [re.compile(p, flags=re.IGNORECASE) for p in (stop_regexes or [])]
+
+    for idx, line in enumerate(lines):
+        if not line:
+            continue
+        m = label_re.match(line.strip())
+        if not m:
+            continue
+
+        same_line_value = (m.group(1) or "").strip()
+        if same_line_value:
+            return same_line_value
+
+        collected: list[str] = []
+        for next_line in lines[idx + 1:]:
+            s = (next_line or "").strip()
+            if not s:
+                if collected:
+                    break
+                continue
+            if any(sr.search(s) for sr in stop_res):
+                break
+            collected.append(s)
+
+        return " ".join(collected).strip()
+
+    return ""
+
+
 def _looks_like_address_line(line: str) -> bool:
     if not line:
         return False
@@ -158,9 +201,17 @@ def _parse_company_block_lines(lines: list[str]) -> dict | None:
                 rf"^đại\s+diện(?:\s+pháp\s+luật)?{LABEL_SEPARATOR_PATTERN}(.+)$",
             )
 
-        address = _extract_value_after_label(
+        address = _extract_value_after_label_or_following_lines(
             lines,
-            rf"^địa\s+chỉ(?:\s+thuế)?{LABEL_SEPARATOR_PATTERN}(.+)$",
+            rf"^địa\s+chỉ(?:\s+thuế)?{LABEL_SEPARATOR_PATTERN}(.*)$",
+            stop_regexes=[
+                rf"^điện\s+thoại{LABEL_SEPARATOR_PATTERN}",
+                rf"^hotline{LABEL_SEPARATOR_PATTERN}",
+                rf"^người\s+đại\s+diện{LABEL_SEPARATOR_PATTERN}",
+                rf"^người\s+đại\s+diện\s+pháp\s+luật{LABEL_SEPARATOR_PATTERN}",
+                rf"^đại\s+diện(?:\s+pháp\s+luật)?{LABEL_SEPARATOR_PATTERN}",
+                r"^email\s*[:：]?",
+            ],
         )
 
         phone_raw = _extract_value_after_label(
