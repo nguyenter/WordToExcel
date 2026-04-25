@@ -306,27 +306,35 @@ def create_payment(order_code):
 
     try:
         # Compatible with multiple PayOS Python SDK versions:
-        # - older SDKs accept plain dict
-        # - newer SDKs require PaymentData/ItemData object types
+        # - some SDKs accept plain dict
+        # - some require PaymentData object
         try:
             pay_res = payos.createPaymentLink(payment_data)
         except Exception:
-            from payos import ItemData, PaymentData
+            from payos import PaymentData
 
-            payment_obj = PaymentData(
-                orderCode=payment_data["orderCode"],
-                amount=payment_data["amount"],
-                description=payment_data["description"],
-                returnUrl=payment_data["returnUrl"],
-                cancelUrl=payment_data["cancelUrl"],
-                items=[
-                    ItemData(
-                        name="Word to Excel",
-                        quantity=1,
-                        price=FIXED_PRICE,
-                    )
-                ],
-            )
+            payment_obj = None
+
+            # Variant A: PaymentData accepts items as list[dict]
+            try:
+                payment_obj = PaymentData(
+                    orderCode=payment_data["orderCode"],
+                    amount=payment_data["amount"],
+                    description=payment_data["description"],
+                    returnUrl=payment_data["returnUrl"],
+                    cancelUrl=payment_data["cancelUrl"],
+                    items=payment_data["items"],
+                )
+            except Exception:
+                # Variant B: older signature without items
+                payment_obj = PaymentData(
+                    orderCode=payment_data["orderCode"],
+                    amount=payment_data["amount"],
+                    description=payment_data["description"],
+                    returnUrl=payment_data["returnUrl"],
+                    cancelUrl=payment_data["cancelUrl"],
+                )
+
             pay_res = payos.createPaymentLink(payment_obj)
     except Exception as exc:
         return jsonify({"ok": False, "message": f"Lỗi tạo thanh toán: {exc}"}), 502
