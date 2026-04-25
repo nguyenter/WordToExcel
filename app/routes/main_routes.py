@@ -67,6 +67,19 @@ def _to_utc_iso(dt_obj: datetime):
     return dt_obj.astimezone(timezone.utc).isoformat()
 
 
+def _pluck(data, key, default=None):
+    if isinstance(data, dict):
+        return data.get(key, default)
+    return getattr(data, key, default)
+
+
+def _to_int(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _generate_order_code():
     # Millisecond-ish + random tail to reduce collision risk.
     return int(f"{int(time.time() * 1000)}{secrets.randbelow(90) + 10}")
@@ -108,6 +121,65 @@ def _cleanup_expired_orders():
     except Exception:
         # Cleanup is best-effort only.
         pass
+
+
+def _mark_order_paid(supabase, order_code):
+    order_code_int = _to_int(order_code)
+    if order_code_int is None:
+        return False
+
+    order_res = (
+        supabase.table("orders")
+        .select("status")
+        .eq("order_code", order_code_int)
+        .limit(1)
+        .execute()
+    )
+    order = (order_res.data or [None])[0]
+    if not order:
+        return False
+    if order.get("status") in {"DOWNLOADED", "EXPIRED"}:
+        return False
+
+    (
+        supabase.table("orders")
+        .update({"status": "PAID", "paid_at": _utc_now_iso()})
+        .eq("order_code", order_code_int)
+        .execute()
+    )
+    return True
+
+
+def _sync_paid_status_from_payos(payos, supabase, order_code):
+    """
+    Best-effort fallback when webhook is delayed/missed:
+    query PayOS directly and mark order as PAID if confirmed.
+    """
+    order_code_int = _to_int(order_code)
+    if order_code_int is None:
+        return False
+
+    candidates = []
+    if hasattr(payos, "getPaymentLinkInformation"):
+        candidates.append(lambda: payos.getPaymentLinkInformation(order_code_int))
+    if hasattr(payos, "getPaymentLinkInfomation"):
+        candidates.append(lambda: payos.getPaymentLinkInfomation(order_code_int))
+    if hasattr(payos, "payment_requests") and hasattr(payos.payment_requests, "get"):
+        candidates.append(lambda: payos.payment_requests.get(order_code_int))
+
+    for call in candidates:
+        try:
+            info = call()
+        except Exception:
+            continue
+
+        data = _pluck(info, "data", info)
+        status = (_pluck(data, "status", "") or "").upper()
+        amount = _to_int(_pluck(data, "amount"))
+        if status == "PAID" and amount == FIXED_PRICE:
+            return _mark_order_paid(supabase, order_code_int)
+
+    return False
 
 
 def _validate_docx_content(file_bytes: BytesIO) -> str | None:
@@ -387,27 +459,13 @@ def payos_webhook():
     except Exception as exc:
         return jsonify({"ok": False, "message": f"Webhook không hợp lệ: {exc}"}), 400
 
-    data = verified.get("data", {}) if isinstance(verified, dict) else {}
-    status = data.get("status")
-    amount = data.get("amount")
-    order_code = data.get("orderCode")
+    data = _pluck(verified, "data", verified)
+    status = (_pluck(data, "status", "") or "").upper()
+    amount = _to_int(_pluck(data, "amount"))
+    order_code = _to_int(_pluck(data, "orderCode"))
 
-    if status == "PAID" and amount == FIXED_PRICE and order_code:
-        order_res = (
-            supabase.table("orders")
-            .select("status")
-            .eq("order_code", order_code)
-            .limit(1)
-            .execute()
-        )
-        order = (order_res.data or [None])[0]
-        if order and order.get("status") in {"PENDING", "PAID"}:
-            (
-                supabase.table("orders")
-                .update({"status": "PAID", "paid_at": _utc_now_iso()})
-                .eq("order_code", order_code)
-                .execute()
-            )
+    if status == "PAID" and amount == FIXED_PRICE and order_code is not None:
+        _mark_order_paid(supabase, order_code)
 
     return jsonify({"ok": True})
 
@@ -430,6 +488,20 @@ def check_payment(order_code):
     order = (res.data or [None])[0]
     if not order:
         return jsonify({"ok": False, "message": "Không tìm thấy đơn hàng."}), 404
+
+    # Fallback sync: if webhook missed/delayed, query PayOS directly.
+    if order.get("status") == "PENDING":
+        payos, payos_error = _get_payos()
+        if not payos_error:
+            if _sync_paid_status_from_payos(payos, supabase, order_code):
+                refreshed = (
+                    supabase.table("orders")
+                    .select("status,expires_at")
+                    .eq("order_code", order_code)
+                    .limit(1)
+                    .execute()
+                )
+                order = (refreshed.data or [order])[0]
 
     return jsonify({
         "ok": True,
