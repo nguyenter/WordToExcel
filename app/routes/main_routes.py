@@ -295,18 +295,61 @@ def create_payment(order_code):
         "description": "Word to Excel",
         "returnUrl": return_url,
         "cancelUrl": cancel_url,
+        "items": [
+            {
+                "name": "Word to Excel",
+                "quantity": 1,
+                "price": FIXED_PRICE,
+            }
+        ],
     }
 
     try:
-        pay_res = payos.createPaymentLink(payment_data)
+        # Compatible with multiple PayOS Python SDK versions:
+        # - older SDKs accept plain dict
+        # - newer SDKs require PaymentData/ItemData object types
+        try:
+            pay_res = payos.createPaymentLink(payment_data)
+        except Exception:
+            from payos import ItemData, PaymentData
+
+            payment_obj = PaymentData(
+                orderCode=payment_data["orderCode"],
+                amount=payment_data["amount"],
+                description=payment_data["description"],
+                returnUrl=payment_data["returnUrl"],
+                cancelUrl=payment_data["cancelUrl"],
+                items=[
+                    ItemData(
+                        name="Word to Excel",
+                        quantity=1,
+                        price=FIXED_PRICE,
+                    )
+                ],
+            )
+            pay_res = payos.createPaymentLink(payment_obj)
     except Exception as exc:
         return jsonify({"ok": False, "message": f"Lỗi tạo thanh toán: {exc}"}), 502
+
+    if isinstance(pay_res, dict):
+        checkout_url = pay_res.get("checkoutUrl")
+        qr_code = pay_res.get("qrCode")
+    else:
+        checkout_url = getattr(pay_res, "checkoutUrl", None)
+        qr_code = getattr(pay_res, "qrCode", None)
+        if not checkout_url and hasattr(pay_res, "to_json"):
+            try:
+                payload_json = pay_res.to_json()
+                checkout_url = payload_json.get("checkoutUrl")
+                qr_code = payload_json.get("qrCode")
+            except Exception:
+                pass
 
     return jsonify({
         "ok": True,
         "orderCode": order_code,
-        "checkoutUrl": pay_res.get("checkoutUrl"),
-        "qrCode": pay_res.get("qrCode"),
+        "checkoutUrl": checkout_url,
+        "qrCode": qr_code,
     })
 
 
