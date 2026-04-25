@@ -2,18 +2,12 @@
 
 {% block content %}
 <div id="pricing-announcement-overlay" class="pricing-announcement-overlay" role="dialog" aria-modal="true" aria-labelledby="pricing-announcement-title">
-    <div class="pricing-announcement-card">
-        <button
-            id="pricing-announcement-close"
-            type="button"
-            class="pricing-announcement-close"
-            aria-label="Đóng thông báo"
-        >
-            &times;
-        </button>
-        <h3 id="pricing-announcement-title" class="h5 mb-3">Thông báo quan trọng</h3>
-        <p class="mb-2">Website chuyển đổi file data Word sang Excel cho Nasani sẽ bắt đầu tính phí từ <strong>00:00 27/04/2026</strong>.</p>
-    </div>
+    <img
+        id="pricing-announcement-title"
+        class="pricing-announcement-image"
+        src="{{ url_for('static', filename='images/comingsoon.png') }}"
+        alt="Hệ thống đang nâng cấp"
+    >
 </div>
 
 <style>
@@ -24,17 +18,15 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 1rem;
-    background: rgba(0, 0, 0, 0.6);
+    background: #000;
 }
 
-.pricing-announcement-card {
-    position: relative;
-    width: min(580px, 100%);
-    padding: 1.85rem;
-    border-radius: 12px;
-    background: #fff;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+.pricing-announcement-image {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    object-position: center;
+    display: block;
     user-select: none;
     -webkit-user-select: none;
 }
@@ -44,16 +36,6 @@
     -webkit-user-select: none;
 }
 
-.pricing-announcement-close {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.75rem;
-    border: none;
-    background: transparent;
-    font-size: 1.75rem;
-    line-height: 1;
-    cursor: pointer;
-}
 </style>
 
 <section class="container py-4">
@@ -124,22 +106,18 @@
 <script>
 (() => {
     const overlay = document.getElementById("pricing-announcement-overlay");
-    const closeButton = document.getElementById("pricing-announcement-close");
 
-    if (!overlay || !closeButton) {
+    if (!overlay) {
         return;
     }
 
     document.body.style.overflow = "hidden";
 
-    const announcementCard = overlay.querySelector(".pricing-announcement-card");
-    if (announcementCard) {
-        ["copy", "cut", "contextmenu", "selectstart", "dragstart"].forEach((eventName) => {
-            announcementCard.addEventListener(eventName, (event) => {
-                event.preventDefault();
-            });
+    ["copy", "cut", "contextmenu", "selectstart", "dragstart"].forEach((eventName) => {
+        overlay.addEventListener(eventName, (event) => {
+            event.preventDefault();
         });
-    }
+    });
 
     document.querySelectorAll(".no-copy-block").forEach((node) => {
         ["copy", "cut", "contextmenu", "selectstart", "dragstart"].forEach((eventName) => {
@@ -147,11 +125,6 @@
                 event.preventDefault();
             });
         });
-    });
-
-    closeButton.addEventListener("click", () => {
-        overlay.remove();
-        document.body.style.overflow = "";
     });
 })();
 </script>
