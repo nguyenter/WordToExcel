@@ -146,6 +146,11 @@
         qrModal.setAttribute("aria-hidden", "true");
     });
 
+    const buildFallbackQrUrl = (url) => {
+        if (!url) return "";
+        return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(url)}`;
+    };
+
     const createDownload = async (orderCode) => {
         const tokenRes = await fetch(`/api/download-token/${orderCode}`, {
             method: "POST",
@@ -222,11 +227,19 @@
                 return;
             }
 
-            if (!paymentData.qrCode || !paymentData.checkoutUrl) {
-                throw new Error("Thiếu thông tin QR từ cổng thanh toán.");
+            if (!paymentData.checkoutUrl) {
+                throw new Error("Thiếu liên kết thanh toán từ cổng PayOS.");
             }
 
-            qrImage.src = paymentData.qrCode;
+            const qrSrc = paymentData.qrCode || buildFallbackQrUrl(paymentData.checkoutUrl);
+            qrImage.src = qrSrc;
+            qrImage.referrerPolicy = "no-referrer";
+            qrImage.onerror = () => {
+                const fallbackSrc = buildFallbackQrUrl(paymentData.checkoutUrl);
+                if (qrImage.src !== fallbackSrc) {
+                    qrImage.src = fallbackSrc;
+                }
+            };
             checkoutLink.href = paymentData.checkoutUrl;
             qrModal.classList.add("show");
             qrModal.setAttribute("aria-hidden", "false");
