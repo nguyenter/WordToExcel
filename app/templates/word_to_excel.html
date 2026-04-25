@@ -34,6 +34,10 @@
     width: min(280px, 100%);
     height: auto;
 }
+
+.payment-qr-note {
+    font-size: 0.92rem;
+}
 </style>
 
 <section class="container py-4">
@@ -105,6 +109,10 @@
         <h5 class="mb-2">Quét mã để thanh toán</h5>
         <p class="text-muted mb-2">Giá cố định: 5.000đ / file</p>
         <img id="qrImage" class="payment-qr-image mb-2" alt="QR thanh toán PayOS">
+        <div class="alert alert-warning payment-qr-note py-2 px-3 mb-2 text-start" role="note">
+            Dùng <strong>camera điện thoại</strong> để quét mã này (không quét bằng app ngân hàng).
+            Hoặc bấm <strong>Mở trang thanh toán</strong> để chuyển hướng đến trang thanh toán.
+        </div>
         <div class="d-grid gap-2">
             <a id="checkoutLink" class="btn btn-outline-primary" href="#" target="_blank" rel="noopener noreferrer">Mở trang thanh toán</a>
             <button type="button" class="btn btn-secondary" id="closeQrBtn">Đóng</button>
