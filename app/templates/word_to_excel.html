@@ -1,41 +1,39 @@
 {% extends 'layout/base.html' %}
 
 {% block content %}
-<div id="pricing-announcement-overlay" class="pricing-announcement-overlay" role="dialog" aria-modal="true" aria-labelledby="pricing-announcement-title">
-    <img
-        id="pricing-announcement-title"
-        class="pricing-announcement-image"
-        src="{{ url_for('static', filename='images/comingsoon.png') }}"
-        alt="Hệ thống đang nâng cấp"
-    >
-</div>
-
 <style>
-.pricing-announcement-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 2000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #000;
-}
-
-.pricing-announcement-image {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    object-position: center;
-    display: block;
-    user-select: none;
-    -webkit-user-select: none;
-}
-
 .no-copy-block {
     user-select: none;
     -webkit-user-select: none;
 }
 
+.payment-qr-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2100;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.65);
+    padding: 1rem;
+}
+
+.payment-qr-modal.show {
+    display: flex;
+}
+
+.payment-qr-card {
+    width: min(420px, 100%);
+    border-radius: 12px;
+    background: #fff;
+    padding: 1rem;
+    text-align: center;
+}
+
+.payment-qr-image {
+    width: min(280px, 100%);
+    height: auto;
+}
 </style>
 
 <section class="container py-4">
@@ -59,7 +57,7 @@
                     {% endif %}
                     {% endwith %}
 
-                    <form method="post" enctype="multipart/form-data">
+                    <form id="uploadForm" enctype="multipart/form-data">
                         <div class="mb-3">
                             <label for="word_file" class="form-label fw-semibold no-copy-block">Chọn file Word (.docx)</label>
                             <input
@@ -72,10 +70,9 @@
                             />
                         </div>
 
-                        <button type="submit" class="btn btn-primary">
-                            Tải lên và xuất Excel
-                        </button>
+                        <button id="submitBtn" type="submit" class="btn btn-primary">Tải file xuống</button>
                     </form>
+                    <div id="paymentStatus" class="alert alert-info mt-3 d-none" role="status"></div>
                 </div>
             </div>
         </div>
@@ -103,29 +100,145 @@
     </div>
 </section>
 
+<div class="payment-qr-modal" id="qrModal" aria-hidden="true">
+    <div class="payment-qr-card">
+        <h5 class="mb-2">Quét mã để thanh toán</h5>
+        <p class="text-muted mb-2">Giá cố định: 5.000đ / file</p>
+        <img id="qrImage" class="payment-qr-image mb-2" alt="QR thanh toán PayOS">
+        <div class="d-grid gap-2">
+            <a id="checkoutLink" class="btn btn-outline-primary" href="#" target="_blank" rel="noopener noreferrer">Mở trang thanh toán</a>
+            <button type="button" class="btn btn-secondary" id="closeQrBtn">Đóng</button>
+        </div>
+    </div>
+</div>
+
 <script>
 (() => {
-    const overlay = document.getElementById("pricing-announcement-overlay");
+    const uploadForm = document.getElementById("uploadForm");
+    const submitBtn = document.getElementById("submitBtn");
+    const paymentStatus = document.getElementById("paymentStatus");
+    const qrModal = document.getElementById("qrModal");
+    const qrImage = document.getElementById("qrImage");
+    const checkoutLink = document.getElementById("checkoutLink");
+    const closeQrBtn = document.getElementById("closeQrBtn");
 
-    if (!overlay) {
+    if (!uploadForm || !submitBtn || !paymentStatus || !qrModal || !qrImage || !checkoutLink || !closeQrBtn) {
         return;
     }
 
-    document.body.style.overflow = "hidden";
+    let pollingTimer = null;
 
-    ["copy", "cut", "contextmenu", "selectstart", "dragstart"].forEach((eventName) => {
-        overlay.addEventListener(eventName, (event) => {
-            event.preventDefault();
-        });
+    const setStatus = (text, kind = "info") => {
+        paymentStatus.classList.remove("d-none", "alert-info", "alert-danger", "alert-success", "alert-warning");
+        paymentStatus.classList.add(`alert-${kind}`);
+        paymentStatus.textContent = text;
+    };
+
+    const stopPolling = () => {
+        if (pollingTimer) {
+            clearInterval(pollingTimer);
+            pollingTimer = null;
+        }
+    };
+
+    closeQrBtn.addEventListener("click", () => {
+        qrModal.classList.remove("show");
+        qrModal.setAttribute("aria-hidden", "true");
     });
 
-    document.querySelectorAll(".no-copy-block").forEach((node) => {
-        ["copy", "cut", "contextmenu", "selectstart", "dragstart"].forEach((eventName) => {
-            node.addEventListener(eventName, (event) => {
-                event.preventDefault();
-            });
+    const createDownload = async (orderCode) => {
+        const tokenRes = await fetch(`/api/download-token/${orderCode}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
         });
+        const tokenData = await tokenRes.json();
+        if (!tokenRes.ok || !tokenData.ok || !tokenData.downloadUrl) {
+            throw new Error(tokenData.message || "Không tạo được link tải.");
+        }
+        window.location.href = tokenData.downloadUrl;
+    };
+
+    const startPolling = (orderCode) => {
+        stopPolling();
+        pollingTimer = setInterval(async () => {
+            try {
+                const checkRes = await fetch(`/api/check-payment/${orderCode}`);
+                const checkData = await checkRes.json();
+                if (!checkRes.ok || !checkData.ok) {
+                    setStatus(checkData.message || "Không kiểm tra được trạng thái thanh toán.", "danger");
+                    return;
+                }
+
+                if (checkData.status === "EXPIRED") {
+                    stopPolling();
+                    setStatus("Đơn hàng đã hết hạn. Vui lòng tải lại file để tạo đơn mới.", "warning");
+                    return;
+                }
+
+                if (checkData.paid) {
+                    stopPolling();
+                    qrModal.classList.remove("show");
+                    qrModal.setAttribute("aria-hidden", "true");
+                    setStatus("Đã thanh toán. Đang tải file...", "success");
+                    await createDownload(orderCode);
+                }
+            } catch (_err) {
+                setStatus("Lỗi mạng khi kiểm tra thanh toán, sẽ thử lại tự động.", "warning");
+            }
+        }, 3000);
+    };
+
+    uploadForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        stopPolling();
+        submitBtn.disabled = true;
+        setStatus("Đang xử lý file Word...", "info");
+
+        try {
+            const formData = new FormData(uploadForm);
+            const uploadRes = await fetch("/api/upload-convert", {
+                method: "POST",
+                body: formData,
+            });
+            const uploadData = await uploadRes.json();
+            if (!uploadRes.ok || !uploadData.ok) {
+                throw new Error(uploadData.message || "Không thể xử lý file.");
+            }
+
+            setStatus("Đã chuyển đổi xong. Đang tạo thanh toán...", "info");
+            const orderCode = uploadData.orderCode;
+            const paymentRes = await fetch(`/api/create-payment/${orderCode}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+            });
+            const paymentData = await paymentRes.json();
+            if (!paymentRes.ok || !paymentData.ok) {
+                throw new Error(paymentData.message || "Không thể tạo thanh toán.");
+            }
+
+            if (paymentData.alreadyPaid) {
+                setStatus("Đơn hàng đã thanh toán. Đang tải file...", "success");
+                await createDownload(orderCode);
+                return;
+            }
+
+            if (!paymentData.qrCode || !paymentData.checkoutUrl) {
+                throw new Error("Thiếu thông tin QR từ cổng thanh toán.");
+            }
+
+            qrImage.src = paymentData.qrCode;
+            checkoutLink.href = paymentData.checkoutUrl;
+            qrModal.classList.add("show");
+            qrModal.setAttribute("aria-hidden", "false");
+            setStatus("Vui lòng quét QR để thanh toán, hệ thống sẽ tự tải file sau khi xác nhận.", "info");
+            startPolling(orderCode);
+        } catch (err) {
+            setStatus(err.message || "Có lỗi xảy ra.", "danger");
+        } finally {
+            submitBtn.disabled = false;
+        }
     });
 })();
 </script>
+
 {% endblock %}

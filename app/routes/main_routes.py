@@ -1,8 +1,13 @@
-from pathlib import Path
+import os
+import secrets
+import tempfile
+import time
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
+from pathlib import Path
 from zipfile import BadZipFile, ZipFile
 
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
@@ -10,6 +15,7 @@ from app.services.word_to_excel_service import convert_docx_to_excel_bytes
 
 main_bp = Blueprint('main', __name__)
 SAMPLE_WORD_PATH = Path(__file__).resolve().parents[2] / "data mẫu.pdf"
+FIXED_PRICE = 5000
 DOCX_REQUIRED_ENTRIES = (
     "[Content_Types].xml",
     "word/document.xml",
@@ -18,6 +24,90 @@ DOCX_BLOCKED_ENTRIES = (
     "word/vbaProject.bin",
     "word/vbaData.xml",
 )
+
+
+def _get_supabase():
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY")
+    if not url or not key:
+        return None, "Thiếu cấu hình SUPABASE_URL hoặc SUPABASE_KEY."
+
+    try:
+        from supabase import create_client
+    except ImportError:
+        return None, "Thiếu thư viện supabase. Hãy cài dependencies mới."
+
+    return create_client(url, key), None
+
+
+def _get_payos():
+    client_id = os.getenv("PAYOS_CLIENT_ID")
+    api_key = os.getenv("PAYOS_API_KEY")
+    checksum_key = os.getenv("PAYOS_CHECKSUM_KEY")
+    if not client_id or not api_key or not checksum_key:
+        return None, "Thiếu cấu hình PayOS trong biến môi trường."
+
+    try:
+        from payos import PayOS
+    except ImportError:
+        return None, "Thiếu thư viện payos. Hãy cài dependencies mới."
+
+    return PayOS(client_id=client_id, api_key=api_key, checksum_key=checksum_key), None
+
+
+def _utc_now():
+    return datetime.now(timezone.utc)
+
+
+def _utc_now_iso():
+    return _utc_now().isoformat()
+
+
+def _to_utc_iso(dt_obj: datetime):
+    return dt_obj.astimezone(timezone.utc).isoformat()
+
+
+def _generate_order_code():
+    # Millisecond-ish + random tail to reduce collision risk.
+    return int(f"{int(time.time() * 1000)}{secrets.randbelow(90) + 10}")
+
+
+def _safe_cleanup_file(file_path: str):
+    if not file_path:
+        return
+    try:
+        path = Path(file_path)
+        if path.exists() and path.is_file():
+            path.unlink()
+    except Exception:
+        pass
+
+
+def _cleanup_expired_orders():
+    supabase, error = _get_supabase()
+    if error:
+        return
+
+    try:
+        now_iso = _utc_now_iso()
+        res = (
+            supabase.table("orders")
+            .select("order_code,file_path,status,expires_at")
+            .in_("status", ["PENDING", "PAID"])
+            .lt("expires_at", now_iso)
+            .execute()
+        )
+        for item in res.data or []:
+            _safe_cleanup_file(item.get("file_path"))
+            (
+                supabase.table("orders")
+                .update({"status": "EXPIRED"})
+                .eq("order_code", item.get("order_code"))
+                .execute()
+            )
+    except Exception:
+        # Cleanup is best-effort only.
+        pass
 
 
 def _validate_docx_content(file_bytes: BytesIO) -> str | None:
@@ -90,35 +180,14 @@ def handle_file_too_large(_error):
 
 @main_bp.route('/word-to-excel', methods=['GET', 'POST'])
 def word_to_excel():
+    _cleanup_expired_orders()
+
     if request.method == 'GET':
         return render_template('word_to_excel.html')
 
-    upload = request.files.get('word_file')
-    if upload is None or upload.filename == '':
-        flash('Vui lòng chọn file Word để tải lên.', 'danger')
-        return redirect(url_for('main.word_to_excel'))
-
-    filename = secure_filename(upload.filename)
-    suffix = Path(filename).suffix.lower()
-    if suffix != '.docx':
-        flash('Chỉ hỗ trợ file .docx.', 'danger')
-        return redirect(url_for('main.word_to_excel'))
-
-    file_bytes = BytesIO(upload.read())
-    validation_error = _validate_docx_content(file_bytes)
-    if validation_error:
-        flash(validation_error, 'danger')
-        return redirect(url_for('main.word_to_excel'))
-
-    excel_bytes = convert_docx_to_excel_bytes(file_bytes)
-    excel_name = f"{Path(filename).stem}.xlsx"
-
-    return send_file(
-        excel_bytes,
-        as_attachment=True,
-        download_name=excel_name,
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
+    # Hard-block legacy direct download flow: all downloads must go through payment APIs.
+    flash('Hệ thống yêu cầu thanh toán trước khi tải file. Vui lòng bật JavaScript và thao tác lại.', 'warning')
+    return redirect(url_for('main.word_to_excel'))
 
 
 @main_bp.route('/sample-word')
@@ -133,3 +202,274 @@ def sample_word():
         download_name='data-mau.pdf',
         mimetype='application/pdf',
     )
+
+
+@main_bp.route('/api/upload-convert', methods=['POST'])
+def upload_convert():
+    _cleanup_expired_orders()
+
+    supabase, supabase_error = _get_supabase()
+    if supabase_error:
+        return jsonify({"ok": False, "message": supabase_error}), 500
+
+    upload = request.files.get('word_file')
+    if upload is None or upload.filename == '':
+        return jsonify({"ok": False, "message": "Vui lòng chọn file Word để tải lên."}), 400
+
+    filename = secure_filename(upload.filename)
+    suffix = Path(filename).suffix.lower()
+    if suffix != '.docx':
+        return jsonify({"ok": False, "message": "Chỉ hỗ trợ file .docx."}), 400
+
+    file_bytes = BytesIO(upload.read())
+    validation_error = _validate_docx_content(file_bytes)
+    if validation_error:
+        return jsonify({"ok": False, "message": validation_error}), 400
+
+    excel_bytes = convert_docx_to_excel_bytes(file_bytes)
+
+    order_code = _generate_order_code()
+    temp_dir = Path(tempfile.gettempdir())
+    excel_path = temp_dir / f"{order_code}.xlsx"
+    with excel_path.open("wb") as out:
+        out.write(excel_bytes.getvalue())
+
+    expires_at = _utc_now() + timedelta(minutes=current_app.config.get("FILE_TTL_MINUTES", 15))
+    insert_payload = {
+        "order_code": order_code,
+        "status": "PENDING",
+        "amount": FIXED_PRICE,
+        "file_path": str(excel_path),
+        "created_at": _utc_now_iso(),
+        "expires_at": _to_utc_iso(expires_at),
+    }
+    try:
+        supabase.table("orders").insert(insert_payload).execute()
+    except Exception as exc:
+        _safe_cleanup_file(str(excel_path))
+        return jsonify({"ok": False, "message": f"Không thể tạo đơn hàng: {exc}"}), 500
+
+    return jsonify({
+        "ok": True,
+        "orderCode": order_code,
+        "amount": FIXED_PRICE,
+        "expiresAt": _to_utc_iso(expires_at),
+    })
+
+
+@main_bp.route('/api/create-payment/<int:order_code>', methods=['POST'])
+def create_payment(order_code):
+    _cleanup_expired_orders()
+
+    supabase, supabase_error = _get_supabase()
+    if supabase_error:
+        return jsonify({"ok": False, "message": supabase_error}), 500
+
+    payos, payos_error = _get_payos()
+    if payos_error:
+        return jsonify({"ok": False, "message": payos_error}), 500
+
+    order_res = (
+        supabase.table("orders")
+        .select("*")
+        .eq("order_code", order_code)
+        .limit(1)
+        .execute()
+    )
+    order = (order_res.data or [None])[0]
+    if not order:
+        return jsonify({"ok": False, "message": "Không tìm thấy đơn hàng."}), 404
+
+    if order.get("status") == "PAID":
+        return jsonify({"ok": True, "alreadyPaid": True, "orderCode": order_code})
+
+    if order.get("status") in {"DOWNLOADED", "EXPIRED"}:
+        return jsonify({"ok": False, "message": "Đơn hàng đã hết hiệu lực."}), 410
+
+    public_base_url = current_app.config.get("PUBLIC_BASE_URL", "").rstrip("/")
+    return_url = f"{public_base_url}/word-to-excel" if public_base_url else request.host_url.rstrip("/") + "/word-to-excel"
+    cancel_url = return_url
+    payment_data = {
+        "orderCode": order_code,
+        "amount": FIXED_PRICE,
+        "description": "Word to Excel",
+        "returnUrl": return_url,
+        "cancelUrl": cancel_url,
+    }
+
+    try:
+        pay_res = payos.createPaymentLink(payment_data)
+    except Exception as exc:
+        return jsonify({"ok": False, "message": f"Lỗi tạo thanh toán: {exc}"}), 502
+
+    return jsonify({
+        "ok": True,
+        "orderCode": order_code,
+        "checkoutUrl": pay_res.get("checkoutUrl"),
+        "qrCode": pay_res.get("qrCode"),
+    })
+
+
+@main_bp.route('/api/webhook/payos', methods=['POST'])
+def payos_webhook():
+    _cleanup_expired_orders()
+
+    supabase, supabase_error = _get_supabase()
+    if supabase_error:
+        return jsonify({"ok": False, "message": supabase_error}), 500
+
+    payos, payos_error = _get_payos()
+    if payos_error:
+        return jsonify({"ok": False, "message": payos_error}), 500
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        verified = payos.verifyPaymentWebhookData(payload)
+    except Exception as exc:
+        return jsonify({"ok": False, "message": f"Webhook không hợp lệ: {exc}"}), 400
+
+    data = verified.get("data", {}) if isinstance(verified, dict) else {}
+    status = data.get("status")
+    amount = data.get("amount")
+    order_code = data.get("orderCode")
+
+    if status == "PAID" and amount == FIXED_PRICE and order_code:
+        order_res = (
+            supabase.table("orders")
+            .select("status")
+            .eq("order_code", order_code)
+            .limit(1)
+            .execute()
+        )
+        order = (order_res.data or [None])[0]
+        if order and order.get("status") in {"PENDING", "PAID"}:
+            (
+                supabase.table("orders")
+                .update({"status": "PAID", "paid_at": _utc_now_iso()})
+                .eq("order_code", order_code)
+                .execute()
+            )
+
+    return jsonify({"ok": True})
+
+
+@main_bp.route('/api/check-payment/<int:order_code>', methods=['GET'])
+def check_payment(order_code):
+    _cleanup_expired_orders()
+
+    supabase, supabase_error = _get_supabase()
+    if supabase_error:
+        return jsonify({"ok": False, "message": supabase_error}), 500
+
+    res = (
+        supabase.table("orders")
+        .select("status,expires_at")
+        .eq("order_code", order_code)
+        .limit(1)
+        .execute()
+    )
+    order = (res.data or [None])[0]
+    if not order:
+        return jsonify({"ok": False, "message": "Không tìm thấy đơn hàng."}), 404
+
+    return jsonify({
+        "ok": True,
+        "paid": order.get("status") == "PAID",
+        "status": order.get("status"),
+        "expiresAt": order.get("expires_at"),
+    })
+
+
+@main_bp.route('/api/download-token/<int:order_code>', methods=['POST'])
+def create_download_token(order_code):
+    _cleanup_expired_orders()
+
+    supabase, supabase_error = _get_supabase()
+    if supabase_error:
+        return jsonify({"ok": False, "message": supabase_error}), 500
+
+    res = (
+        supabase.table("orders")
+        .select("*")
+        .eq("order_code", order_code)
+        .limit(1)
+        .execute()
+    )
+    order = (res.data or [None])[0]
+    if not order:
+        return jsonify({"ok": False, "message": "Không tìm thấy đơn hàng."}), 404
+    if order.get("status") != "PAID":
+        return jsonify({"ok": False, "message": "Đơn hàng chưa thanh toán."}), 403
+
+    token = secrets.token_urlsafe(32)
+    token_expires_at = _utc_now() + timedelta(minutes=current_app.config.get("DOWNLOAD_TOKEN_TTL_MINUTES", 3))
+    (
+        supabase.table("orders")
+        .update({
+            "download_token": token,
+            "token_expires_at": _to_utc_iso(token_expires_at),
+        })
+        .eq("order_code", order_code)
+        .execute()
+    )
+    return jsonify({
+        "ok": True,
+        "downloadUrl": url_for("main.download_by_token", token=token),
+        "tokenExpiresAt": _to_utc_iso(token_expires_at),
+    })
+
+
+@main_bp.route('/download/<token>', methods=['GET'])
+def download_by_token(token):
+    _cleanup_expired_orders()
+
+    supabase, supabase_error = _get_supabase()
+    if supabase_error:
+        return "Thiếu cấu hình Supabase.", 500
+
+    res = (
+        supabase.table("orders")
+        .select("*")
+        .eq("download_token", token)
+        .limit(1)
+        .execute()
+    )
+    order = (res.data or [None])[0]
+    if not order:
+        return "Liên kết tải không hợp lệ.", 404
+
+    token_expires_at = order.get("token_expires_at")
+    if not token_expires_at:
+        return "Liên kết tải đã hết hạn.", 410
+
+    now_iso = _utc_now_iso()
+    if token_expires_at < now_iso:
+        return "Liên kết tải đã hết hạn.", 410
+
+    if order.get("status") != "PAID":
+        return "Đơn hàng chưa hợp lệ để tải.", 403
+
+    file_path = order.get("file_path")
+    if not file_path or not Path(file_path).exists():
+        return "File không còn tồn tại.", 410
+
+    excel_name = f"{order.get('order_code')}.xlsx"
+    response = send_file(
+        file_path,
+        as_attachment=True,
+        download_name=excel_name,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+
+    _safe_cleanup_file(file_path)
+    (
+        supabase.table("orders")
+        .update({
+            "status": "DOWNLOADED",
+            "download_token": None,
+            "token_expires_at": None,
+        })
+        .eq("order_code", order.get("order_code"))
+        .execute()
+    )
+    return response
