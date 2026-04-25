@@ -305,19 +305,29 @@ def create_payment(order_code):
     }
 
     try:
-        # Compatible with multiple PayOS Python SDK versions:
-        # - some SDKs accept plain dict
-        # - some require PaymentData object
+        # Compatible with multiple PayOS Python SDK versions.
+        pay_res = None
+        last_error = None
+
+        # Variant A: old SDK style.
         try:
             pay_res = payos.createPaymentLink(payment_data)
-        except Exception:
-            from payos import PaymentData
+        except Exception as exc:
+            last_error = exc
 
-            payment_obj = None
-
-            # Variant A: PaymentData accepts items as list[dict]
+        # Variant B: newer SDK style payos.payment_requests.create(dict).
+        if pay_res is None:
             try:
-                payment_obj = PaymentData(
+                pay_res = payos.payment_requests.create(payment_data)
+            except Exception as exc:
+                last_error = exc
+
+        # Variant C: newer SDK with typed request object.
+        if pay_res is None:
+            try:
+                from payos.types import CreatePaymentLinkRequest
+
+                request_obj = CreatePaymentLinkRequest(
                     orderCode=payment_data["orderCode"],
                     amount=payment_data["amount"],
                     description=payment_data["description"],
@@ -325,31 +335,29 @@ def create_payment(order_code):
                     cancelUrl=payment_data["cancelUrl"],
                     items=payment_data["items"],
                 )
-            except Exception:
-                # Variant B: older signature without items
-                payment_obj = PaymentData(
-                    orderCode=payment_data["orderCode"],
-                    amount=payment_data["amount"],
-                    description=payment_data["description"],
-                    returnUrl=payment_data["returnUrl"],
-                    cancelUrl=payment_data["cancelUrl"],
-                )
+                try:
+                    pay_res = payos.payment_requests.create(request_obj)
+                except Exception:
+                    pay_res = payos.createPaymentLink(request_obj)
+            except Exception as exc:
+                last_error = exc
 
-            pay_res = payos.createPaymentLink(payment_obj)
+        if pay_res is None:
+            raise RuntimeError(str(last_error) if last_error else "Không thể tạo link thanh toán với SDK PayOS hiện tại.")
     except Exception as exc:
         return jsonify({"ok": False, "message": f"Lỗi tạo thanh toán: {exc}"}), 502
 
     if isinstance(pay_res, dict):
-        checkout_url = pay_res.get("checkoutUrl")
-        qr_code = pay_res.get("qrCode")
+        checkout_url = pay_res.get("checkoutUrl") or pay_res.get("checkout_url")
+        qr_code = pay_res.get("qrCode") or pay_res.get("qr_code")
     else:
-        checkout_url = getattr(pay_res, "checkoutUrl", None)
-        qr_code = getattr(pay_res, "qrCode", None)
+        checkout_url = getattr(pay_res, "checkoutUrl", None) or getattr(pay_res, "checkout_url", None)
+        qr_code = getattr(pay_res, "qrCode", None) or getattr(pay_res, "qr_code", None)
         if not checkout_url and hasattr(pay_res, "to_json"):
             try:
                 payload_json = pay_res.to_json()
-                checkout_url = payload_json.get("checkoutUrl")
-                qr_code = payload_json.get("qrCode")
+                checkout_url = payload_json.get("checkoutUrl") or payload_json.get("checkout_url")
+                qr_code = payload_json.get("qrCode") or payload_json.get("qr_code")
             except Exception:
                 pass
 
