@@ -21,20 +21,20 @@ DOWNLOAD_TOKEN_TTL_MINUTES=3
 
 ### 3. API Key Configuration (để bypass payment)
 ```
-API_KEY=nasani-2024-secret-key
+API_KEY=your-api-key-here
 ```
 
 ### 4. Supabase Configuration
 ```
-SUPABASE_URL=https://wmztulnvkpjfgohrwznz.supabase.co
-SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndtenR1bG52a3BqZmdvaHJ3em56Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3Njk0OTg1NiwiZXhwIjoyMDkyNTI1ODU2fQ.t1iiINdhc6YutfbAgyM3dxNb-Ns-R-Url6an666W5xk
+SUPABASE_URL=your-supabase-url-here
+SUPABASE_KEY=your-supabase-key-here
 ```
 
 ### 5. PayOS Configuration
 ```
-PAYOS_CLIENT_ID=9894e396-caa8-4e1e-97bf-bf4d7cb76039
-PAYOS_API_KEY=b01d6f20-382a-4150-8352-71f234013b4f
-PAYOS_CHECKSUM_KEY=83775809175ecf13387ea945e7efda8e883f8545a40e0a70d3d138c228cf4d3b
+PAYOS_CLIENT_ID=your-payos-client-id-here
+PAYOS_API_KEY=your-payos-api-key-here
+PAYOS_CHECKSUM_KEY=your-payos-checksum-key-here
 ```
 
 ## Lưu ý quan trọng
