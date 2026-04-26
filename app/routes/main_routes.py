@@ -280,10 +280,6 @@ def sample_word():
 def upload_convert():
     _cleanup_expired_orders()
 
-    supabase, supabase_error = _get_supabase()
-    if supabase_error:
-        return jsonify({"ok": False, "message": supabase_error}), 500
-
     upload = request.files.get('word_file')
     if upload is None or upload.filename == '':
         return jsonify({"ok": False, "message": "Vui lòng chọn file Word để tải lên."}), 400
@@ -300,33 +296,89 @@ def upload_convert():
 
     excel_bytes = convert_docx_to_excel_bytes(file_bytes)
 
-    order_code = _generate_order_code()
-    temp_dir = Path(tempfile.gettempdir())
-    excel_path = temp_dir / f"{order_code}.xlsx"
-    with excel_path.open("wb") as out:
-        out.write(excel_bytes.getvalue())
+    # Check if API key is provided and valid
+    api_key = request.form.get('api_key', '').strip()
+    config_api_key = current_app.config.get("API_KEY", "")
+    is_valid_api_key = api_key and config_api_key and api_key == config_api_key
 
-    expires_at = _utc_now() + timedelta(minutes=current_app.config.get("FILE_TTL_MINUTES", 15))
-    insert_payload = {
-        "order_code": order_code,
-        "status": "PENDING",
-        "amount": FIXED_PRICE,
-        "file_path": str(excel_path),
-        "created_at": _utc_now_iso(),
-        "expires_at": _to_utc_iso(expires_at),
-    }
-    try:
-        supabase.table("orders").insert(insert_payload).execute()
-    except Exception as exc:
-        _safe_cleanup_file(str(excel_path))
-        return jsonify({"ok": False, "message": f"Không thể tạo đơn hàng: {exc}"}), 500
+    if is_valid_api_key:
+        # Bypass payment, generate direct download
+        order_code = _generate_order_code()
+        temp_dir = Path(tempfile.gettempdir())
+        excel_path = temp_dir / f"{order_code}.xlsx"
+        with excel_path.open("wb") as out:
+            out.write(excel_bytes.getvalue())
 
-    return jsonify({
-        "ok": True,
-        "orderCode": order_code,
-        "amount": FIXED_PRICE,
-        "expiresAt": _to_utc_iso(expires_at),
-    })
+        # Generate download token immediately
+        token = secrets.token_urlsafe(32)
+        token_expires_at = _utc_now() + timedelta(minutes=current_app.config.get("DOWNLOAD_TOKEN_TTL_MINUTES", 3))
+
+        # Store in a simple in-memory structure or use Supabase if available
+        # For now, we'll use Supabase to track API key downloads
+        supabase, supabase_error = _get_supabase()
+        if not supabase_error:
+            expires_at = _utc_now() + timedelta(minutes=current_app.config.get("FILE_TTL_MINUTES", 15))
+            insert_payload = {
+                "order_code": order_code,
+                "status": "PAID",
+                "amount": 0,
+                "file_path": str(excel_path),
+                "created_at": _utc_now_iso(),
+                "expires_at": _to_utc_iso(expires_at),
+                "paid_at": _utc_now_iso(),
+                "download_token": token,
+                "token_expires_at": _to_utc_iso(token_expires_at),
+            }
+            try:
+                supabase.table("orders").insert(insert_payload).execute()
+            except Exception as exc:
+                _safe_cleanup_file(str(excel_path))
+                return jsonify({"ok": False, "message": f"Không thể tạo đơn hàng: {exc}"}), 500
+        else:
+            # Fallback: store in memory (not recommended for production)
+            return jsonify({"ok": False, "message": "Cần cấu hình Supabase để sử dụng API key."}), 500
+
+        return jsonify({
+            "ok": True,
+            "orderCode": order_code,
+            "amount": 0,
+            "expiresAt": _to_utc_iso(token_expires_at),
+            "downloadUrl": url_for("main.download_by_token", token=token),
+            "bypassPayment": True,
+        })
+    else:
+        # Regular flow with payment
+        supabase, supabase_error = _get_supabase()
+        if supabase_error:
+            return jsonify({"ok": False, "message": supabase_error}), 500
+
+        order_code = _generate_order_code()
+        temp_dir = Path(tempfile.gettempdir())
+        excel_path = temp_dir / f"{order_code}.xlsx"
+        with excel_path.open("wb") as out:
+            out.write(excel_bytes.getvalue())
+
+        expires_at = _utc_now() + timedelta(minutes=current_app.config.get("FILE_TTL_MINUTES", 15))
+        insert_payload = {
+            "order_code": order_code,
+            "status": "PENDING",
+            "amount": FIXED_PRICE,
+            "file_path": str(excel_path),
+            "created_at": _utc_now_iso(),
+            "expires_at": _to_utc_iso(expires_at),
+        }
+        try:
+            supabase.table("orders").insert(insert_payload).execute()
+        except Exception as exc:
+            _safe_cleanup_file(str(excel_path))
+            return jsonify({"ok": False, "message": f"Không thể tạo đơn hàng: {exc}"}), 500
+
+        return jsonify({
+            "ok": True,
+            "orderCode": order_code,
+            "amount": FIXED_PRICE,
+            "expiresAt": _to_utc_iso(expires_at),
+        })
 
 
 @main_bp.route('/api/create-payment/<int:order_code>', methods=['POST'])

@@ -12,4 +12,5 @@ class Config:
     PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "")
     FILE_TTL_MINUTES = int(os.getenv("FILE_TTL_MINUTES", "15"))
     DOWNLOAD_TOKEN_TTL_MINUTES = int(os.getenv("DOWNLOAD_TOKEN_TTL_MINUTES", "3"))
+    API_KEY = os.getenv("API_KEY", "")
 

@@ -102,7 +102,10 @@
                             />
                         </div>
 
-                        <button id="submitBtn" type="submit" class="btn btn-primary">Tải file xuống</button>
+                        <div class="d-flex gap-2">
+                            <button id="submitBtn" type="submit" class="btn btn-primary">Tải file xuống</button>
+                            <button id="keyBtn" type="button" class="btn btn-secondary" data-bs-toggle="modal" data-bs-target="#keyModal">Key</button>
+                        </div>
                     </form>
                     <div id="paymentStatus" class="alert alert-info mt-3 d-none" role="status"></div>
                 </div>
@@ -132,6 +135,30 @@
     </div>
 </section>
 
+<div class="modal fade" id="keyModal" tabindex="-1" aria-labelledby="keyModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="keyModalLabel">Nhập Key</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="apiKeyInput" class="form-label">API Key</label>
+                    <input type="password" class="form-control" id="apiKeyInput" placeholder="Nhập API key của bạn">
+                </div>
+                <div class="alert alert-info" role="alert">
+                    Nhập API key để tải file không cần thanh toán.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                <button type="button" class="btn btn-primary" id="saveKeyBtn">Tải file bằng Key</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="payment-qr-modal" id="qrModal" aria-hidden="true">
     <div class="payment-qr-card">
         <h5 class="mb-2">Quét mã để thanh toán</h5>
@@ -158,6 +185,9 @@
     const qrImage = document.getElementById("qrImage");
     const checkoutLink = document.getElementById("checkoutLink");
     const closeQrBtn = document.getElementById("closeQrBtn");
+    const keyBtn = document.getElementById("keyBtn");
+    const apiKeyInput = document.getElementById("apiKeyInput");
+    const saveKeyBtn = document.getElementById("saveKeyBtn");
 
     if (!uploadForm || !submitBtn || !paymentStatus || !qrModal || !qrImage || !checkoutLink || !closeQrBtn) {
         return;
@@ -191,6 +221,72 @@
         qrModal.classList.remove("show");
         qrModal.setAttribute("aria-hidden", "true");
     });
+
+    // Handle save key button - upload with API key
+    if (saveKeyBtn && apiKeyInput) {
+        saveKeyBtn.addEventListener("click", async () => {
+            const key = apiKeyInput.value.trim();
+            if (!key) {
+                setStatus("Vui lòng nhập API key.", "warning");
+                return;
+            }
+
+            const fileInput = document.getElementById("word_file");
+            if (!fileInput || fileInput.files.length === 0) {
+                setStatus("Vui lòng chọn file Word trước.", "warning");
+                return;
+            }
+
+            // Close the modal
+            const modalElement = document.getElementById("keyModal");
+            const modalInstance = bootstrap.Modal.getInstance(modalElement);
+            if (modalInstance) {
+                modalInstance.hide();
+            } else {
+                modalElement.classList.remove("show");
+                document.body.classList.remove("modal-open");
+                const backdrop = document.querySelector(".modal-backdrop");
+                if (backdrop) backdrop.remove();
+            }
+
+            // Upload with API key
+            stopPolling();
+            submitBtn.disabled = true;
+            setStatus("Đang xử lý file Word với API key...", "info");
+
+            try {
+                const formData = new FormData(uploadForm);
+                formData.append("api_key", key);
+
+                const uploadRes = await fetch("/api/upload-convert", {
+                    method: "POST",
+                    body: formData,
+                });
+                const uploadData = await uploadRes.json();
+                if (!uploadRes.ok || !uploadData.ok) {
+                    throw new Error(uploadData.message || "Không thể xử lý file.");
+                }
+
+                // Check if payment was bypassed due to valid API key
+                if (uploadData.bypassPayment && uploadData.downloadUrl) {
+                    setStatus("API key hợp lệ. Đang tải file...", "success");
+                    // Remove API key from localStorage after successful use
+                    localStorage.removeItem("apiKey");
+                    if (apiKeyInput) {
+                        apiKeyInput.value = "";
+                    }
+                    window.location.href = uploadData.downloadUrl;
+                    return;
+                } else {
+                    throw new Error("API key không hợp lệ hoặc đã hết hạn.");
+                }
+            } catch (err) {
+                setStatus(err.message || "Có lỗi xảy ra.", "danger");
+            } finally {
+                submitBtn.disabled = false;
+            }
+        });
+    }
 
     const buildFallbackQrUrl = (url) => {
         if (!url) return "";
