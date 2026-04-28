@@ -116,6 +116,7 @@ def _extract_value_after_label_or_following_lines(
         if same_line_value:
             return same_line_value
 
+        # If no value on same line, read from following lines
         collected: list[str] = []
         for next_line in lines[idx + 1:]:
             s = (next_line or "").strip()
@@ -241,20 +242,20 @@ def _parse_company_block_lines(lines: list[str]) -> dict | None:
     company_name = first_line
     representative = _extract_value_after_label_or_following_lines(
         lines,
-        rf"^người\s+đại\s+diện{LABEL_SEPARATOR_PATTERN}(.+)$",
-        stop_regexes=[r"^hotline", r"^ngày\s+cập\s+nhật", r"^ngay\s+cap\s+nhat"],
+        rf"^người\s+đại\s+diện{LABEL_SEPARATOR_PATTERN}(.*)$",
+        stop_regexes=[r"^hotline", r"^ngày\s+cập\s+nhật", r"^ngay\s+cap\s+nhat", r"^địa\s+chỉ", r"^điện\s+thoại"],
     )
     if not representative:
         representative = _extract_value_after_label_or_following_lines(
             lines,
-            rf"^người\s+đại\s+diện\s+pháp\s+luật{LABEL_SEPARATOR_PATTERN}(.+)$",
-            stop_regexes=[r"^hotline", r"^ngày\s+cập\s+nhật", r"^ngay\s+cap\s+nhat"],
+            rf"^người\s+đại\s+diện\s+pháp\s+luật{LABEL_SEPARATOR_PATTERN}(.*)$",
+            stop_regexes=[r"^hotline", r"^ngày\s+cập\s+nhật", r"^ngay\s+cap\s+nhat", r"^địa\s+chỉ", r"^điện\s+thoại"],
         )
     if not representative:
         representative = _extract_value_after_label_or_following_lines(
             lines,
-            rf"^đại\s+diện(?:\s+pháp\s+luật)?{LABEL_SEPARATOR_PATTERN}(.+)$",
-            stop_regexes=[r"^hotline", r"^ngày\s+cập\s+nhật", r"^ngay\s+cap\s+nhat"],
+            rf"^đại\s+diện(?:\s+pháp\s+luật)?{LABEL_SEPARATOR_PATTERN}(.*)$",
+            stop_regexes=[r"^hotline", r"^ngày\s+cập\s+nhật", r"^ngay\s+cap\s+nhat", r"^địa\s+chỉ", r"^điện\s+thoại"],
         )
 
     hotline_line = next((l for l in lines if re.search(r"\bhotline\b", l, flags=re.IGNORECASE)), "")
