@@ -275,10 +275,6 @@ def _parse_company_block_lines(lines: list[str]) -> dict | None:
 
     address = " ".join(address_parts).strip()
 
-    # Format representative with label
-    if representative:
-        representative = f"Đại diện:\n{representative}"
-
     return {
         "Khách hàng": company_name,
         "Tên liên hệ": representative,
