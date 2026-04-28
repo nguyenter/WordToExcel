@@ -360,20 +360,6 @@ def convert_docx_to_excel_bytes(file_stream):
             # If anything goes wrong, don't break export.
             pass
 
-        # Enable wrap text for "Tên liên hệ" column to allow line breaks
-        try:
-            contact_col_idx = next(
-                (cell.column for cell in ws[1] if (cell.value or "").strip() == "Tên liên hệ"),
-                None,
-            )
-            if contact_col_idx is not None:
-                for row in range(2, ws.max_row + 1):
-                    c = ws.cell(row=row, column=contact_col_idx)
-                    c.alignment = Alignment(wrap_text=True, vertical="top")
-        except Exception:
-            # If anything goes wrong, don't break export.
-            pass
-
         # Freeze header row for easier scrolling.
         ws.freeze_panes = "A2"
     output.seek(0)
