@@ -239,19 +239,22 @@ def _parse_company_block_lines(lines: list[str]) -> dict | None:
     # 4) "Hotline: ..."
     # 5) email line
     company_name = first_line
-    representative = _extract_value_after_label(
+    representative = _extract_value_after_label_or_following_lines(
         lines,
         rf"^người\s+đại\s+diện{LABEL_SEPARATOR_PATTERN}(.+)$",
+        stop_regexes=[r"^hotline", r"^ngày\s+cập\s+nhật", r"^ngay\s+cap\s+nhat"],
     )
     if not representative:
-        representative = _extract_value_after_label(
+        representative = _extract_value_after_label_or_following_lines(
             lines,
             rf"^người\s+đại\s+diện\s+pháp\s+luật{LABEL_SEPARATOR_PATTERN}(.+)$",
+            stop_regexes=[r"^hotline", r"^ngày\s+cập\s+nhật", r"^ngay\s+cap\s+nhat"],
         )
     if not representative:
-        representative = _extract_value_after_label(
+        representative = _extract_value_after_label_or_following_lines(
             lines,
             rf"^đại\s+diện(?:\s+pháp\s+luật)?{LABEL_SEPARATOR_PATTERN}(.+)$",
+            stop_regexes=[r"^hotline", r"^ngày\s+cập\s+nhật", r"^ngay\s+cap\s+nhat"],
         )
 
     hotline_line = next((l for l in lines if re.search(r"\bhotline\b", l, flags=re.IGNORECASE)), "")
