@@ -15,7 +15,7 @@ from app.services.word_to_excel_service import convert_docx_to_excel_bytes
 
 main_bp = Blueprint('main', __name__)
 SAMPLE_WORD_PATH = Path(__file__).resolve().parents[2] / "data mẫu.pdf"
-FIXED_PRICE = 3000
+FIXED_PRICE = 2000
 DOCX_REQUIRED_ENTRIES = (
     "[Content_Types].xml",
     "word/document.xml",
