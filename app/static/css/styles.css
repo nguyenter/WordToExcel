@@ -99,6 +99,32 @@ header {
     font-weight: 600;
 }
 
+.social-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #f1f5f9;
+    transition: all 0.2s ease-in-out;
+    text-decoration: none;
+}
+
+.social-link:hover {
+    background: #e2e8f0;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.social-link svg {
+    transition: transform 0.2s ease-in-out;
+}
+
+.social-link:hover svg {
+    transform: scale(1.1);
+}
+
 .qr-modal-overlay {
     position: fixed;
     inset: 0;
