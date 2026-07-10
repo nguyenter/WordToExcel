@@ -5,5 +5,4 @@ openpyxl==3.1.5
 pandas==2.3.3
 python-docx==1.2.0
 python-dotenv==1.2.2
-payos>=1.1.0
 supabase
