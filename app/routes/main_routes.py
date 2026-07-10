@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import json
 import os
 import secrets
 import tempfile
@@ -5,6 +8,8 @@ import time
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 from zipfile import BadZipFile, ZipFile
 
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, send_file, url_for
@@ -71,8 +76,87 @@ def _format_payos_error(exc):
             parts.append(f"mã {exc.error_code}")
         if exc.status_code:
             parts.append(f"HTTP {exc.status_code}")
+        if exc.response is not None:
+            try:
+                body = (exc.response.text or "").strip()
+                if body:
+                    parts.append(f"response: {body[:300]}")
+            except Exception:
+                pass
         return " — ".join(parts) if parts else "Lỗi PayOS không xác định."
     return str(exc)
+
+
+def _mask_secret(value):
+    value = (value or "").strip()
+    if not value:
+        return {"loaded": False, "length": 0}
+    return {
+        "loaded": True,
+        "length": len(value),
+        "prefix": value[:4],
+        "suffix": value[-4:] if len(value) >= 4 else value,
+    }
+
+
+def _raise_payos_http_error(http_error):
+    raw = http_error.read().decode("utf-8", errors="replace")
+    try:
+        parsed = json.loads(raw)
+        message = parsed.get("desc") or parsed.get("message") or raw
+        code = parsed.get("code")
+        suffix = f" (HTTP {http_error.code}"
+        if code:
+            suffix += f", mã {code}"
+        suffix += ")"
+        raise RuntimeError(f"{message}{suffix}") from http_error
+    except json.JSONDecodeError:
+        raise RuntimeError(f"HTTP {http_error.code}: {raw[:300]}") from http_error
+
+
+def _create_payos_payment_link_direct(client_id, api_key, checksum_key, order_code, return_url, cancel_url):
+    description = "WordExcel"
+    amount = FIXED_PRICE
+    data_string = (
+        f"amount={amount}&cancelUrl={cancel_url}&description={description}"
+        f"&orderCode={order_code}&returnUrl={return_url}"
+    )
+    signature = hmac.new(
+        checksum_key.encode("utf-8"),
+        data_string.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    payload = {
+        "orderCode": order_code,
+        "amount": amount,
+        "description": description,
+        "returnUrl": return_url,
+        "cancelUrl": cancel_url,
+        "signature": signature,
+    }
+
+    http_request = urllib_request.Request(
+        "https://api-merchant.payos.vn/v2/payment-requests",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "x-client-id": client_id,
+            "x-api-key": api_key,
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib_request.urlopen(http_request, timeout=30) as response:
+            body = json.loads(response.read().decode("utf-8"))
+    except urllib_error.HTTPError as exc:
+        _raise_payos_http_error(exc)
+
+    if body.get("code") != "00":
+        raise RuntimeError(body.get("desc") or "PayOS trả về lỗi.")
+
+    return body.get("data") or {}
 
 
 def _utc_now():
@@ -189,9 +273,22 @@ def _extract_payment_link_response(pay_res):
 
 
 def _create_payos_payment_link(payos, order_code, return_url, cancel_url):
+    errors = []
+
+    try:
+        return _create_payos_payment_link_direct(
+            payos.client_id,
+            payos.api_key,
+            payos.checksum_key,
+            order_code,
+            return_url,
+            cancel_url,
+        )
+    except Exception as exc:
+        errors.append(str(exc))
+
     description = "WordExcel"
     items = [{"name": description, "quantity": 1, "price": FIXED_PRICE}]
-    errors = []
 
     if hasattr(payos, "payment_requests") and hasattr(payos.payment_requests, "create"):
         try:
@@ -226,7 +323,7 @@ def _create_payos_payment_link(payos, order_code, return_url, cancel_url):
         errors.append(_format_payos_error(exc))
 
     if errors:
-        raise RuntimeError(errors[-1])
+        raise RuntimeError(errors[0])
     raise RuntimeError("Không thể tạo link thanh toán PayOS với SDK hiện tại.")
 
 
@@ -322,6 +419,76 @@ def index():
 def ping():
     # Lightweight endpoint for uptime monitors (Render/UptimeRobot).
     return jsonify({"status": "ok", "service": "word-to-excel"}), 200
+
+
+@main_bp.route('/api/payos-debug', methods=['GET'])
+def payos_debug():
+    config_api_key = current_app.config.get("API_KEY", "")
+    provided_key = request.args.get("key", "")
+    if not config_api_key or provided_key != config_api_key:
+        return jsonify({"ok": False, "message": "Unauthorized"}), 401
+
+    client_id = (os.getenv("PAYOS_CLIENT_ID") or "").strip()
+    api_key = (os.getenv("PAYOS_API_KEY") or "").strip()
+    checksum_key = (os.getenv("PAYOS_CHECKSUM_KEY") or "").strip()
+    public_base_url = current_app.config.get("PUBLIC_BASE_URL", "").rstrip("/")
+
+    try:
+        import payos as payos_module
+
+        payos_version = getattr(payos_module, "__version__", "unknown")
+    except ImportError:
+        payos_version = None
+
+    env_info = {
+        "clientId": _mask_secret(client_id),
+        "apiKey": _mask_secret(api_key),
+        "checksumKey": _mask_secret(checksum_key),
+        "publicBaseUrl": public_base_url or None,
+    }
+
+    if not client_id or not api_key or not checksum_key:
+        return jsonify({
+            "ok": False,
+            "message": "Thiếu một hoặc nhiều biến PAYOS_* trong môi trường.",
+            "payosVersion": payos_version,
+            "env": env_info,
+        }), 500
+
+    return_url = (
+        f"{public_base_url}/word-to-excel"
+        if public_base_url
+        else request.host_url.rstrip("/") + "/word-to-excel"
+    )
+    test_order_code = _generate_order_code()
+
+    try:
+        result = _create_payos_payment_link_direct(
+            client_id,
+            api_key,
+            checksum_key,
+            test_order_code,
+            return_url,
+            return_url,
+        )
+        checkout_url, _ = _extract_payment_link_response(result)
+        return jsonify({
+            "ok": True,
+            "message": "PayOS kết nối thành công.",
+            "payosVersion": payos_version,
+            "env": env_info,
+            "testOrderCode": test_order_code,
+            "checkoutUrl": checkout_url,
+        })
+    except Exception as exc:
+        return jsonify({
+            "ok": False,
+            "message": str(exc),
+            "payosVersion": payos_version,
+            "env": env_info,
+            "testOrderCode": test_order_code,
+            "returnUrl": return_url,
+        }), 502
 
 
 @main_bp.app_errorhandler(RequestEntityTooLarge)
