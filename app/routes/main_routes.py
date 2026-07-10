@@ -41,9 +41,9 @@ def _get_supabase():
 
 
 def _get_payos():
-    client_id = os.getenv("PAYOS_CLIENT_ID")
-    api_key = os.getenv("PAYOS_API_KEY")
-    checksum_key = os.getenv("PAYOS_CHECKSUM_KEY")
+    client_id = (os.getenv("PAYOS_CLIENT_ID") or "").strip().strip('"').strip("'")
+    api_key = (os.getenv("PAYOS_API_KEY") or "").strip().strip('"').strip("'")
+    checksum_key = (os.getenv("PAYOS_CHECKSUM_KEY") or "").strip().strip('"').strip("'")
     if not client_id or not api_key or not checksum_key:
         return None, "Thiếu cấu hình PayOS trong biến môi trường."
 
@@ -53,6 +53,26 @@ def _get_payos():
         return None, "Thiếu thư viện payos. Hãy cài dependencies mới."
 
     return PayOS(client_id=client_id, api_key=api_key, checksum_key=checksum_key), None
+
+
+def _format_payos_error(exc):
+    try:
+        from payos import APIError
+    except ImportError:
+        return str(exc)
+
+    if isinstance(exc, APIError):
+        parts = []
+        if exc.error_desc:
+            parts.append(exc.error_desc)
+        elif str(exc):
+            parts.append(str(exc))
+        if exc.error_code:
+            parts.append(f"mã {exc.error_code}")
+        if exc.status_code:
+            parts.append(f"HTTP {exc.status_code}")
+        return " — ".join(parts) if parts else "Lỗi PayOS không xác định."
+    return str(exc)
 
 
 def _utc_now():
@@ -81,8 +101,8 @@ def _to_int(value):
 
 
 def _generate_order_code():
-    # Millisecond-ish + random tail to reduce collision risk.
-    return int(f"{int(time.time() * 1000)}{secrets.randbelow(90) + 10}")
+    # PayOS yêu cầu orderCode là số nguyên hợp lệ; dùng epoch giây + hậu tố ngẫu nhiên.
+    return int(f"{int(time.time())}{secrets.randbelow(90) + 10}")
 
 
 def _safe_cleanup_file(file_path: str):
@@ -169,7 +189,8 @@ def _extract_payment_link_response(pay_res):
 
 
 def _create_payos_payment_link(payos, order_code, return_url, cancel_url):
-    items = [{"name": "Word to Excel", "quantity": 1, "price": FIXED_PRICE}]
+    description = "WordExcel"
+    items = [{"name": description, "quantity": 1, "price": FIXED_PRICE}]
     errors = []
 
     if hasattr(payos, "payment_requests") and hasattr(payos.payment_requests, "create"):
@@ -179,14 +200,14 @@ def _create_payos_payment_link(payos, order_code, return_url, cancel_url):
             request_obj = CreatePaymentLinkRequest(
                 orderCode=order_code,
                 amount=FIXED_PRICE,
-                description="Word to Excel",
+                description=description,
                 returnUrl=return_url,
                 cancelUrl=cancel_url,
                 items=items,
             )
             return payos.payment_requests.create(payment_data=request_obj)
         except Exception as exc:
-            errors.append(str(exc))
+            errors.append(_format_payos_error(exc))
 
     try:
         from payos.type import ItemData, PaymentData
@@ -194,15 +215,15 @@ def _create_payos_payment_link(payos, order_code, return_url, cancel_url):
         payment_obj = PaymentData(
             orderCode=order_code,
             amount=FIXED_PRICE,
-            description="Word to Excel",
+            description=description,
             returnUrl=return_url,
             cancelUrl=cancel_url,
-            items=[ItemData(name="Word to Excel", quantity=1, price=FIXED_PRICE)],
+            items=[ItemData(name=description, quantity=1, price=FIXED_PRICE)],
         )
         if hasattr(payos, "createPaymentLink"):
             return payos.createPaymentLink(payment_obj)
     except Exception as exc:
-        errors.append(str(exc))
+        errors.append(_format_payos_error(exc))
 
     if errors:
         raise RuntimeError(errors[-1])
