@@ -30,8 +30,89 @@
 
 {% include 'layout/footer.html' %}
 
+<div
+    id="migrationNoticeOverlay"
+    class="migration-notice-overlay is-hidden"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="migrationNoticeTitle"
+>
+    <div class="migration-notice-card">
+        <button
+            type="button"
+            id="migrationNoticeClose"
+            class="migration-notice-close"
+            aria-label="Đóng thông báo"
+        >&times;</button>
+        <h2 id="migrationNoticeTitle" class="migration-notice-title">Thông báo chuyển host</h2>
+        <p class="migration-notice-body">
+            Từ ngày <strong>13/07/2026</strong>, web chuyển sang host tại <strong>PythonAnywhere</strong>
+            và sẽ ngưng dịch vụ bên <strong>Render</strong>.
+            Truy cập
+            <a href="https://phuocnguyen.pythonanywhere.com/word-to-excel" target="_blank" rel="noopener noreferrer">
+                https://phuocnguyen.pythonanywhere.com/word-to-excel
+            </a>
+            để tiếp tục sử dụng dịch vụ chuyển đổi (đã <strong>miễn phí</strong> chuyển đổi).
+            Mọi khó khăn trong việc truy cập hoặc chuyển đổi file, vui lòng liên hệ
+            <a href="https://www.facebook.com/phnguyn.pn" target="_blank" rel="noopener noreferrer">
+                Facebook Phước Nguyên
+            </a>
+            để được hỗ trợ. Cảm ơn bạn đã sử dụng dịch vụ.
+        </p>
+    </div>
+</div>
+
 <!-- JS Bootstrap -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(() => {
+    const overlay = document.getElementById("migrationNoticeOverlay");
+    const closeBtn = document.getElementById("migrationNoticeClose");
+    const storageKey = "wordToExcelMigrationNoticeDismissed";
+
+    if (!overlay || !closeBtn) {
+        return;
+    }
+
+    const hideNotice = () => {
+        overlay.classList.add("is-hidden");
+        document.body.style.overflow = "";
+        try {
+            sessionStorage.setItem(storageKey, "1");
+        } catch (_err) {
+            // Ignore storage errors (private mode, etc.).
+        }
+    };
+
+    const showNotice = () => {
+        overlay.classList.remove("is-hidden");
+        document.body.style.overflow = "hidden";
+    };
+
+    let dismissed = false;
+    try {
+        dismissed = sessionStorage.getItem(storageKey) === "1";
+    } catch (_err) {
+        dismissed = false;
+    }
+
+    if (!dismissed) {
+        showNotice();
+    }
+
+    closeBtn.addEventListener("click", hideNotice);
+    overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) {
+            hideNotice();
+        }
+    });
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !overlay.classList.contains("is-hidden")) {
+            hideNotice();
+        }
+    });
+})();
+</script>
 
 </body>
 </html>
